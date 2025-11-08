@@ -16,11 +16,15 @@ class StateDiscretizer:
         self.discretizer = KBinsDiscretizer(
             n_bins=self.n_bins,
             encode='ordinal',
-            strategy='quantile'
+            strategy='quantile',
+            quantile_method='averaged_inverted_cdf'
         )
         self.discretizer.fit(features)
         
     def transform(self, features):
+        if features.ndim == 1:
+            features = features.reshape(1, -1)
+            
         discretized = self.discretizer.transform(features).astype(int)
         
         # Convert multi-dimensional discrete state to single index

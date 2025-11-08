@@ -59,11 +59,11 @@ def train_agent(train_data, n_episodes=NUM_EPISODES,
     # Training loop
     for episode in range(n_episodes):
         total_reward, length = train_episode(env, agent)
-        final_return = env.get_cumulative_return()
+        annual_return = env.get_annual_return()
         
         episode_rewards.append(total_reward)
         episode_lengths.append(length)
-        episode_returns.append(final_return)
+        episode_returns.append(annual_return)
         epsilons.append(agent.epsilon)
         
         # Decay epsilon
@@ -118,13 +118,13 @@ def cross_validate(data, n_bins=NUM_BINS,
             if done:
                 break
         
-        final_return = env.get_cumulative_return()
-        cv_scores.append(final_return)
+        annual_return = env.get_cumulative_return()
+        cv_scores.append(annual_return)
         
-        print(f"Validation Return: {final_return:.4f}")
+        print(f"Validation Return: {annual_return:.4f}")
         
-        if final_return > best_score:
-            best_score = final_return
+        if annual_return > best_score:
+            best_score = annual_return
             best_agent = agent
     
     print(f"\nCV Mean Return: {np.mean(cv_scores):.4f} (+/- {np.std(cv_scores):.4f})")
@@ -146,7 +146,7 @@ def plot_training_stats(stats, save_path=None):
     axes[0, 1].plot(stats['episode_returns'])
     axes[0, 1].set_title('Episode Returns')
     axes[0, 1].set_xlabel('Episode')
-    axes[0, 1].set_ylabel('Cumulative Return (%)')
+    axes[0, 1].set_ylabel('Annual Return (%)')
     axes[0, 1].grid(True)
     
     # Plot epsilon

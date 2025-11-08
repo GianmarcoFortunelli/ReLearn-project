@@ -55,8 +55,9 @@ class PortfolioEnv:
             return self._get_state(), None, self.done, None
         
         action = np.array(action)
-        if np.sum(action) != 1:
+        if np.sum(action) > 1.01 or np.sum(action) < 0.99:
             print("WARN action does not sum to 1, rebalancing")
+            print(action)
             action = np.clip(action, 0, 1)
             action = action / np.sum(action)
         
@@ -118,3 +119,12 @@ class PortfolioEnv:
     
     def get_cumulative_return(self):
         return (self.portfolio_value - self.initial_value) / self.initial_value
+    
+    def get_annual_return(self):
+        trading_days = 252
+        if self.n_steps == 0:
+            return 0.0
+        cumulative_return = self.get_cumulative_return()
+        annual_return = (1 + cumulative_return) ** (trading_days / self.n_steps) - 1
+        return annual_return
+        

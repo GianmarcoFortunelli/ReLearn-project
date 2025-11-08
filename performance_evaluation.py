@@ -22,7 +22,7 @@ def evaluation(agent, test_set):
     state = env_model.reset()
     while True:
         action = agent.get_action(state)
-        actions.append[action]
+        actions.append(action)
         next_state, reward, done, info = env_model.step(action)
         if done:
             break
@@ -38,20 +38,14 @@ def evaluation(agent, test_set):
         total_value_static.append(info['portfolio_value'])
         state = next_state
 
-    static_overall_gain = (total_value_static[-1] - 1) * 100
-    model_overall_gain = (total_value_model[-1] - 1) * 100
-
-    # print("static overall gain: ", static_overall_gain)
-    # print("model overall gain: ", model_overall_gain)
+    annual_return_model = env_model.get_annual_return() * 100
+    annual_return_static = env_static.get_annual_return() * 100
 
     returns_static = np.diff(total_value_static) / np.array(total_value_static[:-1])
     returns_model = np.diff(total_value_model) / np.array(total_value_model[:-1])
 
     sharpe_static = np.mean(returns_static) / np.std(returns_static, ddof=1) * np.sqrt(252)
     sharpe_model = np.mean(returns_model) / np.std(returns_model, ddof=1) * np.sqrt(252)
-    
-    # print("static sharpe ratio: ", sharpe_static)
-    # print("model sharpe ratio: ", sharpe_model)
 
     def max_drawdown(values):
         peak = np.maximum.accumulate(values)
@@ -60,44 +54,45 @@ def evaluation(agent, test_set):
     
     mdd_model = max_drawdown(total_value_model)
     mdd_static = max_drawdown(total_value_static)
-    
-    # print("static maximum drowdown: ", mdd_static)
-    # print("model smaximum drowdown: ", mdd_model)
 
     vol_model = np.std(returns_model, ddof=1) * np.sqrt(252) * 100
     vol_static = np.std(returns_static, ddof=1) * np.sqrt(252) * 100
-
-    # print("volatility static: ", vol_static)
-    # print("volatility model: ", vol_model)
+    
+    average_weights = np.array(actions).mean(axis=0)
 
     print("\n" + "="*60)
     print("PERFORMANCE EVALUATION RESULTS")
     print("="*60)
     
     print("\nRL Model:")
-    print(f"  Total Return:        {model_overall_gain:>8.2f}%")
+    print(f"  Annual Return:       {annual_return_model:>8.2f}%")
     print(f"  Sharpe Ratio:        {sharpe_model:>8.2f}")
     print(f"  Volatility (Annual): {vol_model:>8.2f}%")
     print(f"  Max Drawdown:        {mdd_model:>8.2f}%")
     
     print("\n60/40 Benchmark:")
-    print(f"  Total Return:        {static_overall_gain:>8.2f}%")
+    print(f"  Annual Return:       {annual_return_static:>8.2f}%")
     print(f"  Sharpe Ratio:        {sharpe_static:>8.2f}")
     print(f"  Volatility (Annual): {vol_static:>8.2f}%")
     print(f"  Max Drawdown:        {mdd_static:>8.2f}%")
     
     print("\nOutperformance:")
-    print(f"  Return Difference:   {model_overall_gain - static_overall_gain:>8.2f}%")
+    print(f"  Annual Return Diff:  {annual_return_model - annual_return_static:>8.2f}%")
     print(f"  Sharpe Difference:   {sharpe_model - sharpe_static:>8.2f}")
+    
+    print("\nAverage weights:")
+    print(f"  Stocks:        {average_weights[0]:>8.2f}%")
+    print(f"  Bonds:         {average_weights[1]:>8.2f}%")
+    print(f"  Cash:          {average_weights[2]:>8.2f}%")
     
     print("="*60 + "\n")
 
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
     dates = pd.to_datetime(test_set['date'].values)
     plt.title("Portfolio manager")
-    axes[0, 0].plot(dates, actions[0], linewidth=2, label='Stock')
-    axes[0, 0].plot(dates, actions[1], linewidth=2, label='Bonds')
-    axes[0, 0].plot(dates, actions[2], linewidth=2, label='Cash')
+    axes[0, 0].plot(dates[:100], np.array(actions)[:100,0], linewidth=2, label='Stock')
+    axes[0, 0].plot(dates[:100], np.array(actions)[:100,1], linewidth=2, label='Bonds')
+    axes[0, 0].plot(dates[:100], np.array(actions)[:100,2], linewidth=2, label='Cash')
     axes[0, 0].set_title('Weights')
     axes[0, 0].set_xlabel('Date')
     axes[0, 0].set_ylabel('Portfolio distributions')
@@ -134,7 +129,7 @@ def evaluation(agent, test_set):
     
     {'Metric':<20} {'RL Model':<15} {'Benchmark':<15}
     {'-'*50}
-    {'Total Return (%)':<20} {model_overall_gain:>14.2f} {static_overall_gain:>14.2f}
+    {'Annual Return (%)':<20} {annual_return_model:>14.2f} {annual_return_static:>14.2f}
     {'Sharpe Ratio':<20} {sharpe_model:>14.2f} {sharpe_static:>14.2f}
     {'Volatility (%)':<20} {vol_model:>14.2f} {vol_static:>14.2f}
     {'Max Drawdown (%)':<20} {mdd_model:>14.2f} {mdd_static:>14.2f}
