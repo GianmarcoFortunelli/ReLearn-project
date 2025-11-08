@@ -21,18 +21,19 @@ def evaluation(agent, test_set):
     while True:
         action = agent.get_action(state)
         next_state, reward, done, info = env_model.step(action)
+        if done:
+            break
         total_value_model.append(info['portfolio_value'])
         state = next_state
-        if done:
-            break
     
     state = env_static.reset()
+    
     while True:
         next_state, reward, done, info = env_static.step(static_weights)
-        total_value_static.append(info['portfolio_value'])
-        state = next_state
         if done:
             break
+        total_value_static.append(info['portfolio_value'])
+        state = next_state
 
     static_overall_gain = (total_value_static[-1] - 1) * 100
     model_overall_gain = (total_value_model[-1] - 1) * 100
@@ -83,7 +84,7 @@ def evaluation(agent, test_set):
     print(f"  Max Drawdown:        {mdd_static:>8.2f}%")
     
     print("\nOutperformance:")
-    print(f"  Return Difference:   {returns_model - returns_static:>8.2f}%")
+    print(f"  Return Difference:   {model_overall_gain - static_overall_gain:>8.2f}%")
     print(f"  Sharpe Difference:   {sharpe_model - sharpe_static:>8.2f}")
     
     print("="*60 + "\n")
@@ -99,8 +100,8 @@ def evaluation(agent, test_set):
     axes[0, 0].legend()
     axes[0, 0].grid(True, alpha=0.3)
 
-    cum_returns_model = (total_value_model - 1) * 100
-    cum_returns_benchmark = (total_value_static - 1) * 100
+    cum_returns_model = (np.array(total_value_model) - 1) * 100
+    cum_returns_benchmark = (np.array(total_value_static) - 1) * 100
     axes[0, 1].plot(dates, cum_returns_model, linewidth=2, label='RL Model')
     axes[0, 1].plot(dates, cum_returns_benchmark, linewidth=2, label='60/40 Benchmark', alpha=0.7)
     axes[0, 1].set_title('Cumulative Returns')
@@ -140,8 +141,31 @@ def evaluation(agent, test_set):
     axes[1, 1].axis('off')
     
     plt.tight_layout()
-
+    plt.savefig("evaluation_plot.png")
     plt.show()
 
-
     return sharpe_static, sharpe_model
+
+
+if __name__ == "__main__":
+    from agent_tabular import TabularSARSAAgent
+    from config import TRAIN_TEST_SPLIT
+    
+    # Load data
+    print("Loading data...")
+    data = pd.read_csv('dataset.csv')
+    
+    # Split into train and test
+    split_idx = int(len(data) * TRAIN_TEST_SPLIT)
+    test_data = data.iloc[split_idx:].reset_index(drop=True)
+    
+    print(f"Test data size: {len(test_data)}")
+    
+    # Load trained agent
+    agent = TabularSARSAAgent()
+    agent.load(f'agent.npy')
+    
+    # Evaluate agent
+    print("Evaluating agent on test data...")
+    results = evaluation(agent, test_data)
+    
