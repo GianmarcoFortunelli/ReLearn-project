@@ -120,3 +120,5 @@ dmypy.json
 # Data and binary files to ignore (added)
 *.png
 *.npy
+*.pth
+*.pkl

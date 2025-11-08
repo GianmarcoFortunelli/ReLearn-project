@@ -81,18 +81,18 @@ def evaluation(agent, test_set):
     print(f"  Sharpe Difference:   {sharpe_model - sharpe_static:>8.2f}")
     
     print("\nAverage weights:")
-    print(f"  Stocks:        {average_weights[0]:>8.2f}%")
-    print(f"  Bonds:         {average_weights[1]:>8.2f}%")
-    print(f"  Cash:          {average_weights[2]:>8.2f}%")
+    print(f"  Stocks:        {average_weights[0]*100:>8.2f}%")
+    print(f"  Bonds:         {average_weights[1]*100:>8.2f}%")
+    print(f"  Cash:          {average_weights[2]*100:>8.2f}%")
     
     print("="*60 + "\n")
 
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
     dates = pd.to_datetime(test_set['date'].values)
     plt.title("Portfolio manager")
-    axes[0, 0].plot(dates[:100], np.array(actions)[:100,0], linewidth=2, label='Stock')
-    axes[0, 0].plot(dates[:100], np.array(actions)[:100,1], linewidth=2, label='Bonds')
-    axes[0, 0].plot(dates[:100], np.array(actions)[:100,2], linewidth=2, label='Cash')
+    axes[0, 0].plot(dates[:], np.array(actions)[:,0], linewidth=2, label='Stock')
+    axes[0, 0].plot(dates[:], np.array(actions)[:,1], linewidth=2, label='Bonds')
+    axes[0, 0].plot(dates[:], np.array(actions)[:,2], linewidth=2, label='Cash')
     axes[0, 0].set_title('Weights')
     axes[0, 0].set_xlabel('Date')
     axes[0, 0].set_ylabel('Portfolio distributions')
@@ -148,6 +148,7 @@ def evaluation(agent, test_set):
 
 if __name__ == "__main__":
     from agent_tabular import TabularSARSAAgent
+    from agent_mlp import MLPSARSAAgent
     from config import TRAIN_TEST_SPLIT
     
     # Load data
@@ -160,9 +161,17 @@ if __name__ == "__main__":
     
     print(f"Test data size: {len(test_data)}")
     
+    # Choose policy type
+    policy_type = 'mlp'  # 'tabular' 'mlp'
+    
     # Load trained agent
-    agent = TabularSARSAAgent()
-    agent.load(f'agent.npy')
+    print(f"\nLoading {policy_type.upper()} agent...")
+    if policy_type == 'tabular':
+        agent = TabularSARSAAgent()
+        agent.load(f'agent_{policy_type}.npy')
+    else:
+        agent = MLPSARSAAgent()
+        agent.load(f'agent_{policy_type}.pth')
     
     # Evaluate agent
     print("Evaluating agent on test data...")
