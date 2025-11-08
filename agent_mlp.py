@@ -4,23 +4,25 @@ import joblib
 import torch.nn as nn
 from sklearn.preprocessing import StandardScaler
 import torch.optim as optim
-from config import MLP_HIDDEN_LAYERS, MLP_LEARNING_RATE, GAMMA, EPSILON_START, EPSILON_END, EPSILON_DECAY
+from config import (MLP_HIDDEN_LAYERS, MLP_LEARNING_RATE, GAMMA, EPSILON_START, 
+                    EPSILON_END, EPSILON_DECAY, MLP_DISCRETE_ACTIONS, 
+                    REPLAY_BUFFER_SIZE, BATCH_SIZE)
 
 
-class MLPNetwork(nn.Module):
+class QNetwork(nn.Module):
     
-    def __init__(self, input_dim, output_dim, hidden_layers=MLP_HIDDEN_LAYERS):
-        super(MLPNetwork, self).__init__()
+    def __init__(self, state_dim, action_dim, hidden_layers=MLP_HIDDEN_LAYERS):
+        super(QNetwork, self).__init__()
         
         layers = []
-        prev_dim = input_dim
+        prev_dim = state_dim
         
         for hidden_dim in hidden_layers:
             layers.append(nn.Linear(prev_dim, hidden_dim))
             layers.append(nn.ReLU())
             prev_dim = hidden_dim
         
-        layers.append(nn.Linear(prev_dim, output_dim))
+        layers.append(nn.Linear(prev_dim, action_dim))
         
         self.network = nn.Sequential(*layers)
     
@@ -28,25 +30,71 @@ class MLPNetwork(nn.Module):
         return self.network(x)
 
 
-class MLPSARSAAgent:
+class ReplayBuffer:
+    
+    def __init__(self, max_size=REPLAY_BUFFER_SIZE):
+        self.buffer = []
+        self.max_size = max_size
+        
+    def add_to_buffer(self, transition):
+        if len(self.buffer) >= self.max_size:
+            self.buffer.pop(0)
+        self.buffer.append(transition)
+    
+    def sample_minibatch(self, batch_size):
+        if len(self.buffer) < batch_size:
+            batch_size = len(self.buffer)
+        
+        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
+        
+        states = []
+        next_states = []
+        actions = []
+        next_actions = []
+        rewards = []
+        terminals = []
+        
+        for idx in indices:
+            transition = self.buffer[idx]
+            states.append(transition[0])
+            next_states.append(transition[1])
+            actions.append(transition[2])
+            next_actions.append(transition[3])
+            rewards.append(transition[4])
+            terminals.append(transition[5])
+        
+        # Convert to numpy arrays first, then to tensors (more efficient)
+        return (torch.from_numpy(np.array(states)).float(), 
+                torch.from_numpy(np.array(next_states)).float(), 
+                torch.from_numpy(np.array(actions)).float(), 
+                torch.from_numpy(np.array(next_actions)).float(),
+                torch.from_numpy(np.array(rewards)).float(), 
+                torch.from_numpy(np.array(terminals)).float())
+    
+    def __len__(self):
+        return len(self.buffer)
 
-    def __init__(self, state_dim=8, action_dim=3, hidden_layers=MLP_HIDDEN_LAYERS,
+
+class MLPSARSAAgent:
+    def __init__(self, state_dim=8, hidden_layers=MLP_HIDDEN_LAYERS,
                  learning_rate=MLP_LEARNING_RATE, gamma=GAMMA, epsilon_start=EPSILON_START,
                  epsilon_end=EPSILON_END, epsilon_decay=EPSILON_DECAY):
         self.state_dim = state_dim
-        self.action_dim = action_dim
+        self.actions = MLP_DISCRETE_ACTIONS
+        self.n_actions = len(self.actions)
         self.gamma = gamma
         self.epsilon = epsilon_start
         self.epsilon_end = epsilon_end
         self.epsilon_decay = epsilon_decay
         self.feature_scaler = None
-        # Q-network: takes state and action as input, outputs Q-value
-        self.q_network = MLPNetwork(state_dim + action_dim, 1, hidden_layers)
+        
+        # Q-network: takes state as input, outputs Q-value for each action
+        self.q_network = QNetwork(state_dim, self.n_actions, hidden_layers)
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=learning_rate)
         self.criterion = nn.MSELoss()
-        # policy network: takes state as input, outputs action (portfolio weights)
-        self.policy_network = MLPNetwork(state_dim, action_dim, hidden_layers)
-        self.policy_optimizer = optim.Adam(self.policy_network.parameters(), lr=learning_rate)
+        
+        # Replay buffer
+        self.replay_buffer = ReplayBuffer()
 
     def _state_to_tensor(self, state):
         features = state['features']
@@ -58,91 +106,78 @@ class MLPSARSAAgent:
     def fit_feature_scaler(self, features):
         self.feature_scaler = StandardScaler()
         self.feature_scaler.fit(features)
-
-    def _get_q_value(self, state, action):
-        if isinstance(state, dict):
-            state_tensor = self._state_to_tensor(state)
-        else:
-            state_tensor = state
-        
-        if isinstance(action, np.ndarray):
-            action_tensor = torch.FloatTensor(action)
-        else:
-            action_tensor = action
-        
-        state_action = torch.cat([state_tensor, action_tensor])
-        return self.q_network(state_action)
     
     def select_action(self, state, greedy=False):
-        # Epsilon-greedy exploration
         if not greedy and np.random.random() < self.epsilon:
             # Random action
-            action = np.random.dirichlet(np.ones(self.action_dim))
+            action_idx = np.random.randint(self.n_actions)
         else:
-            # Use policy network
+            # Greedy action: select action with highest Q-value
             state_tensor = self._state_to_tensor(state)
             with torch.no_grad():
-                action_logits = self.policy_network(state_tensor)
-                # Apply softmax to ensure weights sum to 1
-                action = torch.softmax(action_logits, dim=0).numpy()
+                q_values = self.q_network(state_tensor)
+                action_idx = torch.argmax(q_values).item()
         
-        return action
+        action = np.array(self.actions[action_idx])
+        return action_idx, action
     
-    def update(self, state, action, reward, next_state, next_action, done):
-        state_tensor = self._state_to_tensor(state)
-        action_tensor = torch.FloatTensor(action)
-        next_state_tensor = self._state_to_tensor(next_state)
-        next_action_tensor = torch.FloatTensor(next_action)
+    def update(self, state, action_idx, reward, next_state, next_action_idx, done):
+        state_vector = self._state_to_tensor(state).numpy()
+        next_state_vector = self._state_to_tensor(next_state).numpy()
         
-        # Current Q-value
-        current_q = self._get_q_value(state_tensor, action_tensor)
+        self.replay_buffer.add_to_buffer(
+            (state_vector, next_state_vector, [action_idx], [next_action_idx], [reward], [int(done)])
+        )
+    
+    def update_network(self, update_rate):
+        if len(self.replay_buffer) < BATCH_SIZE:
+            return 0.0
         
-        # Target Q-value
-        if done:
-            target_q = torch.FloatTensor([reward])
-        else:
+        total_loss = 0.0
+        for _ in range(update_rate):
+            states, next_states, actions, next_actions, rewards, terminals = \
+                self.replay_buffer.sample_minibatch(BATCH_SIZE)
+            
+            # Current Q-values
+            q_values = self.q_network(states)
+            current_q = torch.gather(q_values, dim=1, index=actions.long())
+            
+            # Target Q-values (SARSA: use next action's Q-value)
             with torch.no_grad():
-                next_q = self._get_q_value(next_state_tensor, next_action_tensor)
-                target_q = reward + self.gamma * next_q
+                next_q_values = self.q_network(next_states)
+                next_q = torch.gather(next_q_values, dim=1, index=next_actions.long())
+                
+                not_terminals = 1 - terminals
+                target_q = rewards + not_terminals * self.gamma * next_q
+            
+            # Compute loss and update
+            loss = self.criterion(current_q, target_q)
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+            
+            total_loss += loss.item()
         
-        # Update Q-network
-        self.optimizer.zero_grad()
-        loss = self.criterion(current_q, target_q)
-        loss.backward()
-        self.optimizer.step()
-        
-        # Update policy network to maximize Q-value
-        self.policy_optimizer.zero_grad()
-        state_tensor_grad = self._state_to_tensor(state)
-        action_pred = self.policy_network(state_tensor_grad)
-        action_pred_softmax = torch.softmax(action_pred, dim=0)
-        
-        q_value = self._get_q_value(state_tensor_grad, action_pred_softmax)
-        policy_loss = -q_value.mean()  # Maximize Q-value
-        policy_loss.backward()
-        self.policy_optimizer.step()
-        
-        return loss.item()
+        return total_loss / update_rate
     
     def decay_epsilon(self):
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
     
     def get_action(self, state):
-        return self.select_action(state, greedy=True)
+        _, action = self.select_action(state, greedy=True)
+        return action
     
     def save(self, filepath):
         torch.save({
             'q_network': self.q_network.state_dict(),
-            'policy_network': self.policy_network.state_dict(),
             'optimizer': self.optimizer.state_dict(),
-            'policy_optimizer': self.policy_optimizer.state_dict()
+            'epsilon': self.epsilon
         }, filepath)
         joblib.dump(self.feature_scaler, filepath + '_scaler.pkl')
 
     def load(self, filepath):
         checkpoint = torch.load(filepath)
         self.q_network.load_state_dict(checkpoint['q_network'])
-        self.policy_network.load_state_dict(checkpoint['policy_network'])
         self.optimizer.load_state_dict(checkpoint['optimizer'])
-        self.policy_optimizer.load_state_dict(checkpoint['policy_optimizer'])
+        self.epsilon = checkpoint['epsilon']
         self.feature_scaler = joblib.load(filepath + '_scaler.pkl')

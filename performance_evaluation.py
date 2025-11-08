@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from environment import PortfolioEnv
 
-def evaluation(agent, test_set):
+def evaluation(agent, test_set, plot=True):
     static_weights = [0.6, 0.4, 0.0]
     env_model = PortfolioEnv(test_set)
     env_static = PortfolioEnv(test_set)
@@ -87,61 +87,62 @@ def evaluation(agent, test_set):
     
     print("="*60 + "\n")
 
-    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-    dates = pd.to_datetime(test_set['date'].values)
-    plt.title("Portfolio manager")
-    axes[0, 0].plot(dates[:], np.array(actions)[:,0], linewidth=2, label='Stock')
-    axes[0, 0].plot(dates[:], np.array(actions)[:,1], linewidth=2, label='Bonds')
-    axes[0, 0].plot(dates[:], np.array(actions)[:,2], linewidth=2, label='Cash')
-    axes[0, 0].set_title('Weights')
-    axes[0, 0].set_xlabel('Date')
-    axes[0, 0].set_ylabel('Portfolio distributions')
-    axes[0, 0].legend()
-    axes[0, 0].grid(True, alpha=0.3)
+    if plot:
+        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        dates = pd.to_datetime(test_set['date'].values)
+        plt.title("Portfolio manager")
+        axes[0, 0].plot(dates[:], np.array(actions)[:,0], linewidth=2, label='Stock')
+        axes[0, 0].plot(dates[:], np.array(actions)[:,1], linewidth=2, label='Bonds')
+        axes[0, 0].plot(dates[:], np.array(actions)[:,2], linewidth=2, label='Cash')
+        axes[0, 0].set_title('Weights')
+        axes[0, 0].set_xlabel('Date')
+        axes[0, 0].set_ylabel('Portfolio distributions')
+        axes[0, 0].legend()
+        axes[0, 0].grid(True, alpha=0.3)
 
-    cum_returns_model = (np.array(total_value_model) - 1) * 100
-    cum_returns_benchmark = (np.array(total_value_static) - 1) * 100
-    axes[0, 1].plot(dates, cum_returns_model, linewidth=2, label='RL Model')
-    axes[0, 1].plot(dates, cum_returns_benchmark, linewidth=2, label='60/40 Benchmark', alpha=0.7)
-    axes[0, 1].set_title('Cumulative Returns')
-    axes[0, 1].set_xlabel('Date')
-    axes[0, 1].set_ylabel('Return (%)')
-    axes[0, 1].legend()
-    axes[0, 1].grid(True, alpha=0.3)
+        cum_returns_model = (np.array(total_value_model) - 1) * 100
+        cum_returns_benchmark = (np.array(total_value_static) - 1) * 100
+        axes[0, 1].plot(dates, cum_returns_model, linewidth=2, label='RL Model')
+        axes[0, 1].plot(dates, cum_returns_benchmark, linewidth=2, label='60/40 Benchmark', alpha=0.7)
+        axes[0, 1].set_title('Cumulative Returns')
+        axes[0, 1].set_xlabel('Date')
+        axes[0, 1].set_ylabel('Return (%)')
+        axes[0, 1].legend()
+        axes[0, 1].grid(True, alpha=0.3)
 
-    def calculate_drawdown(values):
-        peak = np.maximum.accumulate(values)
-        drawdown = (values - peak) / peak * 100
-        return drawdown
-    
-    dd_model = calculate_drawdown(total_value_model)
-    dd_benchmark = calculate_drawdown(total_value_static)
-    axes[1, 0].fill_between(dates, dd_model, 0, alpha=0.5, label='RL Model')
-    axes[1, 0].fill_between(dates, dd_benchmark, 0, alpha=0.5, label='60/40 Benchmark')
-    axes[1, 0].set_title('Drawdown')
-    axes[1, 0].set_xlabel('Date')
-    axes[1, 0].set_ylabel('Drawdown (%)')
-    axes[1, 0].legend()
-    axes[1, 0].grid(True, alpha=0.3)
+        def calculate_drawdown(values):
+            peak = np.maximum.accumulate(values)
+            drawdown = (values - peak) / peak * 100
+            return drawdown
+        
+        dd_model = calculate_drawdown(total_value_model)
+        dd_benchmark = calculate_drawdown(total_value_static)
+        axes[1, 0].fill_between(dates, dd_model, 0, alpha=0.5, label='RL Model')
+        axes[1, 0].fill_between(dates, dd_benchmark, 0, alpha=0.5, label='60/40 Benchmark')
+        axes[1, 0].set_title('Drawdown')
+        axes[1, 0].set_xlabel('Date')
+        axes[1, 0].set_ylabel('Drawdown (%)')
+        axes[1, 0].legend()
+        axes[1, 0].grid(True, alpha=0.3)
 
-    metrics_text = f"""
-    Performance Metrics:
-    
-    {'Metric':<20} {'RL Model':<15} {'Benchmark':<15}
-    {'-'*50}
-    {'Annual Return (%)':<20} {annual_return_model:>14.2f} {annual_return_static:>14.2f}
-    {'Sharpe Ratio':<20} {sharpe_model:>14.2f} {sharpe_static:>14.2f}
-    {'Volatility (%)':<20} {vol_model:>14.2f} {vol_static:>14.2f}
-    {'Max Drawdown (%)':<20} {mdd_model:>14.2f} {mdd_static:>14.2f}
-    """
-    
-    axes[1, 1].text(0.1, 0.5, metrics_text, transform=axes[1, 1].transAxes,
-                   fontfamily='monospace', fontsize=10, verticalalignment='center')
-    axes[1, 1].axis('off')
-    
-    plt.tight_layout()
-    plt.savefig("evaluation_plot.png")
-    plt.show()
+        metrics_text = f"""
+        Performance Metrics:
+        
+        {'Metric':<20} {'RL Model':<15} {'Benchmark':<15}
+        {'-'*50}
+        {'Annual Return (%)':<20} {annual_return_model:>14.2f} {annual_return_static:>14.2f}
+        {'Sharpe Ratio':<20} {sharpe_model:>14.2f} {sharpe_static:>14.2f}
+        {'Volatility (%)':<20} {vol_model:>14.2f} {vol_static:>14.2f}
+        {'Max Drawdown (%)':<20} {mdd_model:>14.2f} {mdd_static:>14.2f}
+        """
+        
+        axes[1, 1].text(0.1, 0.5, metrics_text, transform=axes[1, 1].transAxes,
+                    fontfamily='monospace', fontsize=10, verticalalignment='center')
+        axes[1, 1].axis('off')
+        
+        plt.tight_layout()
+        plt.savefig("evaluation_plot.png")
+        plt.show()
 
     return sharpe_static, sharpe_model
 

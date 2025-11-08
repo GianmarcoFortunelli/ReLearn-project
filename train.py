@@ -6,18 +6,16 @@ from environment import PortfolioEnv
 from agent_tabular import TabularSARSAAgent
 from agent_mlp import MLPSARSAAgent
 from performance_evaluation import evaluation
-from config import (NUM_EPISODES, TRAIN_TEST_SPLIT, CV_FOLDS, NUM_BINS,
-                    FEATURE_COLUMNS, RANDOM_SEED)
+from config import (NUM_EPISODES, TRAIN_TEST_SPLIT, NUM_BINS,
+                    FEATURE_COLUMNS, RANDOM_SEED, UPDATE_RATE)
 
 
 def train_episode(env, agent, policy_type='tabular'):
     
     state = env.reset()
     
-    if policy_type == 'tabular':
-        action_idx, action = agent.select_action(state)
-    else:  # mlp
-        action = agent.select_action(state)
+    # Both agents now return (action_idx, action)
+    action_idx, action = agent.select_action(state)
     
     total_reward = 0
     episode_length = 0
@@ -26,22 +24,32 @@ def train_episode(env, agent, policy_type='tabular'):
     while True:
         next_state, reward, done, _ = env.step(action)
         
-        if policy_type == 'tabular':
-            next_action_idx, next_action = agent.select_action(next_state)
-            agent.update(state, action_idx, reward, next_state, next_action_idx, done)
-            action_idx = next_action_idx
-        else:  # mlp
-            next_action = agent.select_action(next_state)
-            loss = agent.update(state, action, reward, next_state, next_action, done)
-            losses.append(loss)
+        # Both agents now return (action_idx, action)
+        next_action_idx, next_action = agent.select_action(next_state)
+        
+        # Update agent (stores transition for MLP, updates Q-table for tabular)
+        agent.update(state, action_idx, reward, next_state, next_action_idx, done)
+        
+        # For MLP: perform mini-batch learning every few steps
+        if policy_type == 'mlp' and episode_length % UPDATE_RATE == 0:
+            loss = agent.update_network(update_rate=1)
+            if loss > 0:
+                losses.append(loss)
         
         state = next_state
+        action_idx = next_action_idx
         action = next_action
         total_reward += reward
         episode_length += 1
         
         if done:
             break
+    
+    # Final network update for MLP at end of episode
+    if policy_type == 'mlp':
+        loss = agent.update_network(update_rate=UPDATE_RATE)
+        if loss > 0:
+            losses.append(loss)
     
     avg_loss = np.mean(losses) if losses else 0
     return total_reward, episode_length, avg_loss
@@ -58,7 +66,7 @@ def train_agent(train_data, test_data, policy_type='tabular', n_episodes=NUM_EPI
         features = train_data[FEATURE_COLUMNS].values
         agent.fit_discretizer(features)
     else:  # mlp
-        agent = MLPSARSAAgent(state_dim=8, action_dim=3)
+        agent = MLPSARSAAgent(state_dim=8)
         features = train_data[FEATURE_COLUMNS].values
         agent.fit_feature_scaler(features)
     
@@ -94,7 +102,11 @@ def train_agent(train_data, test_data, policy_type='tabular', n_episodes=NUM_EPI
                   f"Avg Reward: {avg_reward:.4f}, "
                   f"Avg Return: {avg_return:.4f}, "
                   f"Epsilon: {agent.epsilon:.4f}")
-            evaluation(agent, test_data)
+            if policy_type == 'mlp' and len(episode_losses) > 0:
+                avg_loss = np.mean([l for l in episode_losses[-20:] if l > 0])
+                if not np.isnan(avg_loss):
+                    print(f"  Avg Loss: {avg_loss:.6f}")
+            evaluation(agent, test_data, plot=False)
     
     training_stats = {
         'episode_rewards': episode_rewards,
@@ -105,50 +117,6 @@ def train_agent(train_data, test_data, policy_type='tabular', n_episodes=NUM_EPI
     }
     
     return agent, training_stats
-
-def cross_validate(data, policy_type='tabular', n_bins=NUM_BINS, 
-                   n_episodes=NUM_EPISODES, n_folds=CV_FOLDS):
-    tscv = TimeSeriesSplit(n_splits=n_folds)
-    cv_scores = []
-    best_score = -np.inf
-    best_agent = None
-    
-    print(f"\nPerforming {n_folds}-fold cross-validation...")
-    
-    for fold, (train_idx, val_idx) in enumerate(tscv.split(data)):
-        print(f"\nFold {fold + 1}/{n_folds}")
-        
-        train_fold = data.iloc[train_idx].reset_index(drop=True)
-        val_fold = data.iloc[val_idx].reset_index(drop=True)
-        
-        # Train agent
-        agent, _ = train_agent(train_fold, policy_type, n_episodes, n_bins)
-        
-        # Evaluate on validation set
-        env = PortfolioEnv(val_fold)
-        state = env.reset()
-        total_reward = 0
-        
-        while True:
-            action = agent.get_action(state)
-            next_state, reward, done, _ = env.step(action)
-            total_reward += reward
-            state = next_state
-            if done:
-                break
-        
-        annual_return = env.get_annual_return()
-        cv_scores.append(annual_return)
-        
-        print(f"Validation Return: {annual_return:.4f}")
-        
-        if annual_return > best_score:
-            best_score = annual_return
-            best_agent = agent
-    
-    print(f"\nCV Mean Return: {np.mean(cv_scores):.4f} (+/- {np.std(cv_scores):.4f})")
-    
-    return cv_scores, best_agent
 
 
 def plot_training_stats(stats, save_path=None):
@@ -177,7 +145,7 @@ def plot_training_stats(stats, save_path=None):
     
     # Plot losses (for MLP)
     if stats['episode_losses'] and any(l > 0 for l in stats['episode_losses']):
-        axes[1, 1].plot(stats['episode_losses'])
+        axes[1, 1].plot(stats['episode_losses'][20:])
         axes[1, 1].set_title('Episode Losses')
         axes[1, 1].set_xlabel('Episode')
         axes[1, 1].set_ylabel('Average Loss')
