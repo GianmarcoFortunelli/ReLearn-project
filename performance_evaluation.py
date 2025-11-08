@@ -12,6 +12,8 @@ def evaluation(agent, test_set):
     total_value_model = [0.0] * n
     total_value_static = [0.0] * n
 
+    actions = []
+
     total_value_model = [1.0]
     total_value_static = [1.0]
 
@@ -20,6 +22,7 @@ def evaluation(agent, test_set):
     state = env_model.reset()
     while True:
         action = agent.get_action(state)
+        actions.append[action]
         next_state, reward, done, info = env_model.step(action)
         total_value_model.append(info['portfolio_value'])
         state = next_state
@@ -91,11 +94,12 @@ def evaluation(agent, test_set):
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
     dates = pd.to_datetime(test_set['date'].values)
     plt.title("Portfolio manager")
-    axes[0, 0].plot(dates, total_value_model, linewidth=2, label='RL Model')
-    axes[0, 0].plot(dates, total_value_static, linewidth=2, label='60/40 Benchmark', alpha=0.7)
-    axes[0, 0].set_title('Portfolio Value Over Time')
+    axes[0, 0].plot(dates, actions[0], linewidth=2, label='Stock')
+    axes[0, 0].plot(dates, actions[1], linewidth=2, label='Bonds')
+    axes[0, 0].plot(dates, actions[2], linewidth=2, label='Cash')
+    axes[0, 0].set_title('Weights')
     axes[0, 0].set_xlabel('Date')
-    axes[0, 0].set_ylabel('Portfolio Value')
+    axes[0, 0].set_ylabel('Portfolio distributions')
     axes[0, 0].legend()
     axes[0, 0].grid(True, alpha=0.3)
 
